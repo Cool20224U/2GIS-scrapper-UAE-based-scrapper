@@ -1,0 +1,254 @@
+{
+  "name": "Abu Dhabi Daily Lead Outreach",
+  "nodes": [
+    {
+      "parameters": {
+        "triggerTimes": {
+          "item": [
+            {
+              "mode": "custom",
+              "cronExpression": "0 9 * * *",
+              "timezone": "Asia/Dubai"
+            }
+          ]
+        }
+      },
+      "id": "Cron_9AM",
+      "name": "Daily 9AM Trigger",
+      "type": "n8n-nodes-base.cron",
+      "typeVersion": 1,
+      "position": [
+        200,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "command": "python3 automation/lead_selector.py --limit 49 --json-output output/daily_leads.json --csv-output output/daily_leads.csv",
+        "workingDirectory": "/workspace/2GIS-scrapper-UAE-based-scrapper",
+        "options": {
+          "output": "json",
+          "maxBuffer": 1048576,
+          "environmentVariables": {
+            "DGIS_API_KEY": "={{$env.DGIS_API_KEY}}"
+          }
+        }
+      },
+      "id": "ExecuteCommand",
+      "name": "Collect Fresh Leads",
+      "type": "n8n-nodes-base.executeCommand",
+      "typeVersion": 1,
+      "position": [
+        440,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "functionCode": "const fs = require('fs');\nconst payload = JSON.parse(fs.readFileSync($json.json_output, 'utf8'));\nreturn payload.leads.map(lead => ({ json: lead }));"
+      },
+      "id": "LoadLeads",
+      "name": "Load Lead List",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        680,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "filePath": "assets/company_profile.pdf",
+        "binaryPropertyName": "companyProfile"
+      },
+      "id": "ReadProfile",
+      "name": "Load Company Profile",
+      "type": "n8n-nodes-base.readBinaryFile",
+      "typeVersion": 1,
+      "position": [
+        680,
+        120
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "passThrough",
+        "mergeBy": "index"
+      },
+      "id": "MergeProfile",
+      "name": "Attach Profile",
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 2,
+      "position": [
+        920,
+        220
+      ]
+    },
+    {
+      "parameters": {
+        "batchSize": 1
+      },
+      "id": "SplitBatches",
+      "name": "Send One-by-One",
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 1,
+      "position": [
+        1160,
+        220
+      ]
+    },
+    {
+      "parameters": {
+        "functionCode": "const lead = item.json;\nconst firstName = lead.name ? lead.name.split(' ')[0] : 'Team';\nconst greeting = firstName ? `Hi ${firstName},` : 'Hello,';\nconst senderName = getEnv('SENDER_NAME') || '<<Your Name>>';\nconst senderPhone = getEnv('SENDER_PHONE') || '+971-XX-XXXXXXX';\nconst senderEmail = getEnv('SENDER_EMAIL') || 'sales@bluechipgulf.ae';\nconst body = `${greeting}\n\nMy name is ${senderName}, VP of Sales at Bluechip Gulf IT Services. We help Abu Dhabi organisations modernise their IT infrastructure with enterprise hardware, software licensing, managed services, and rapid on-site support.\n\nAfter reviewing ${lead.name}, I believe we can add value around:\n• Proactive maintenance and 24/7 monitoring so your team can stay focused on core operations\n• Procurement of enterprise hardware/software with UAE-based implementation\n• Tailored cybersecurity and backup solutions aligned to local compliance requirements\n\nCould we schedule a quick discovery call this week? I have attached our company profile for more detail.\n\nLooking forward to your thoughts.\n\nBest regards,\n${senderName}\nVP Sales | Bluechip Gulf IT Services\n${senderPhone}\n${senderEmail}`;\nreturn {\n  json: {\n    lead,\n    to: lead.email,\n    subject: `Bluechip Gulf IT Services support for ${lead.name}`,\n    body\n  },\n  binary: item.binary\n};"
+      },
+      "id": "PrepareEmail",
+      "name": "Prepare Email Payload",
+      "type": "n8n-nodes-base.functionItem",
+      "typeVersion": 1,
+      "position": [
+        1400,
+        220
+      ]
+    },
+    {
+      "parameters": {
+        "fromEmail": "={{$env.SENDER_EMAIL || 'sales@bluechipgulf.ae'}}",
+        "toEmail": "={{$json.to}}",
+        "subject": "={{$json.subject}}",
+        "html": "={{$json.body.replace(/\\n/g, '<br>')}}",
+        "attachments": [
+          {
+            "binaryPropertyName": "companyProfile"
+          }
+        ]
+      },
+      "id": "EmailSend",
+      "name": "Send Company Profile",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2,
+      "position": [
+        1640,
+        220
+      ],
+      "credentials": {
+        "smtp": {
+          "id": "<<REPLACE_WITH_SMTP_CREDENTIAL_ID>>"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "functionCode": "const fs = require('fs');\nconst payload = JSON.parse(fs.readFileSync('output/daily_leads.json', 'utf8'));\nreturn [{ json: {\n  date: new Date().toISOString(),\n  sent: payload.leads.length,\n  leads: payload.leads.map(lead => ({ name: lead.name, email: lead.email, category: lead.category }))\n}}];"
+      },
+      "id": "SummariseRun",
+      "name": "Summarise Run",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        1880,
+        420
+      ]
+    }
+  ],
+  "connections": {
+    "Daily 9AM Trigger": {
+      "main": [
+        [
+          {
+            "node": "Collect Fresh Leads",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Collect Fresh Leads": {
+      "main": [
+        [
+          {
+            "node": "Load Lead List",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Load Lead List": {
+      "main": [
+        [
+          {
+            "node": "Attach Profile",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Load Company Profile": {
+      "main": [
+        [
+          {
+            "node": "Attach Profile",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Attach Profile": {
+      "main": [
+        [
+          {
+            "node": "Send One-by-One",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send One-by-One": {
+      "main": [
+        [
+          {
+            "node": "Prepare Email Payload",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Summarise Run",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Email Payload": {
+      "main": [
+        [
+          {
+            "node": "Send Company Profile",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send Company Profile": {
+      "main": [
+        [
+          {
+            "node": "Send One-by-One",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "timezone": "Asia/Dubai"
+  }
+}
